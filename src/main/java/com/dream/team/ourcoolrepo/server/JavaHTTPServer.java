@@ -13,7 +13,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.Date;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.StringTokenizer;
 
@@ -30,19 +30,17 @@ public class JavaHTTPServer implements Runnable {
     private PrintWriter out;
     private BufferedOutputStream dataOut;
 
-    JavaHTTPServer(Socket connect) {
+    JavaHTTPServer(Socket connect) throws SocketException {
         this.connect = connect;
-        try {
-            connect.setKeepAlive(true);
-            connect.setSoTimeout(3000);
-        } catch (SocketException e) {
-            System.exit(0);
-        }
+        logger.debug("Try to configure socket in the constructor");
+        connect.setKeepAlive(true);
+        connect.setSoTimeout(3000);
 
     }
 
     @Override
     public void run() {
+        logger.debug("Run method start");
         String fileRequested;
         try {
             in = new BufferedReader(new InputStreamReader(connect.getInputStream()));
@@ -50,35 +48,29 @@ public class JavaHTTPServer implements Runnable {
             dataOut = new BufferedOutputStream(connect.getOutputStream());
 
             String input = in.readLine();
-            logger.log(Level.INFO, "Input is:\n" + input);
-            StringTokenizer parse;
-            try {
-                parse = new StringTokenizer(input);
-            } catch (NullPointerException e) {
+            logger.info("Input is:\n" + input);
+            if (input == null) {
+                logger.debug("Input is null");
                 return;
             }
+            StringTokenizer parse = new StringTokenizer(input);
 
             String method = parse.nextToken().toUpperCase();
-            logger.log(Level.INFO, "Request method: " + method);
+            logger.info("Request method: " + method);
             fileRequested = parse.nextToken().toLowerCase();
             Optional<RequestType> requestType = RequestType.of(method);
-
-            if (requestType.isEmpty()) {
-                methodNotSupported(method);
-            } else {
+            if (requestType.isPresent()) {
                 switch (requestType.get()) {
-                    case GET:
-                        processGet(fileRequested);
-                        break;
-                    case POST:
-                        processPost();
-                    case OPTIONS:
-                        processOptions();
+                    case GET -> processGet(fileRequested);
+                    case POST -> processPost();
+                    case OPTIONS -> processOptions();
                 }
-                logger.log(Level.INFO, "File " + fileRequested + " returned");
+            } else {
+                methodNotSupported(method);
             }
+            logger.info("File {} returned", fileRequested);
         } catch (IOException ioe) {
-            logger.log(Level.ERROR, "Server error : " + ioe);
+            logger.error("Server error", ioe);
         } finally {
             try {
                 in.close();
@@ -86,38 +78,46 @@ public class JavaHTTPServer implements Runnable {
                 dataOut.close();
                 connect.close();
             } catch (Exception e) {
-                logger.log(Level.ERROR, "Error closing stream : " + e.getMessage());
+                logger.error("Error closing stream", e);
             }
-            logger.log(Level.INFO, "Connection closed");
+            logger.info("Connection closed");
         }
+        logger.debug("Run method end");
     }
 
     private void processGet(String fileRequested) throws IOException {
-        logger.log(Level.INFO, "GET request was accepted");
+        logger.info("GET request was accepted");
         if (fileRequested.endsWith("/")) {
             fileRequested += DEFAULT_FILE;
         }
-        InputStream inputStream = findFile(fileRequested, true);
-        ContentType content = ContentType.findByFileName(fileRequested);
-        byte[] data = content.getReader().read(inputStream);
-        createResponse(HTTPCodes.OK, content, data.length, data);
-        logger.log(Level.INFO, "File " + fileRequested + " of type " + content.getText() + " returned");
+        try {
+            InputStream inputStream = findFile(fileRequested, true);
+            ContentType content = ContentType.findByFileName(fileRequested);
+            byte[] data = content.getReader().read(inputStream);
+            createResponse(HTTPCodes.OK, content, data.length, data);
+            logger.info("File {} of type {} returned", fileRequested, content.getText());
+        } catch (FileNotFoundException e) {
+            fileNotFound(fileRequested);
+        }
+        logger.debug("GET request processing end");
     }
 
     private void processPost() throws IOException {
-        logger.log(Level.INFO, "POST request was accepted");
+        logger.info("POST request was accepted");
         createResponse(HTTPCodes.CREATED, ContentType.PLAIN, 0, new byte[]{});
+        logger.debug("POST request processing end");
     }
 
     private void processOptions() throws IOException {
-        logger.log(Level.INFO, "OPTIONS request was accepted");
+        logger.info("OPTIONS request was accepted");
         InputStream inputStream = findFile("options.txt", false);
         byte[] data = ContentType.PLAIN.getReader().read(inputStream);
         createResponse(HTTPCodes.OK, ContentType.PLAIN, data.length, data);
+        logger.debug("OPTION request processing end");
     }
 
     private void methodNotSupported(String method) throws IOException {
-        logger.log(Level.WARN, "Unknown method: " + method);
+        logger.warn("Unknown method: {}", method);
         InputStream inputStream = findFile(METHOD_NOT_SUPPORTED, false);
         byte[] data = ContentType.HTML.getReader().read(inputStream);
         createResponse(HTTPCodes.NOT_IMPLEMENTED, ContentType.HTML, data.length, data);
@@ -127,18 +127,13 @@ public class JavaHTTPServer implements Runnable {
         InputStream inputStream = findFile(FILE_NOT_FOUND, false);
         byte[] data = ContentType.HTML.getReader().read(inputStream);
         createResponse(HTTPCodes.NOT_FOUND, ContentType.HTML, data.length, data);
-        logger.log(Level.WARN, "File " + fileRequested + " not found");
-
+        logger.warn("File {} not found", fileRequested);
     }
 
     private InputStream findFile(String fileName, boolean clientFile) throws FileNotFoundException {
-        if (clientFile) {
-            fileName = ROOT + fileName;
-        } else {
-            fileName = "/" + fileName;
-        }
+        fileName = clientFile ? ROOT + fileName : "/" + fileName;
         InputStream inputStream = this.getClass().getResourceAsStream(fileName);
-        logger.log(Level.INFO, "requested path of the file is: " + this.getClass().getResource(fileName));
+        logger.info("Requested path of the file is: {} ", this.getClass().getResource(fileName));
         if (inputStream == null) {
             throw new FileNotFoundException();
         }
@@ -147,8 +142,8 @@ public class JavaHTTPServer implements Runnable {
 
     private void createResponse(HTTPCodes code, ContentType content, int fileLength, byte[] fileData) throws IOException {
         out.println("HTTP/1.1 " + code.getCode() + " " + code.getDescription());
-        out.println("Server: Java HTTP Server");
-        out.println("Date: " + new Date());
+        out.println("Server: COOL Java HTTP Server");
+        out.println("Date: " + LocalDate.now());
         out.println("Content-type: " + content.getText());
         out.println("Content-length: " + fileLength);
         out.println("Access-Control-Allow-Origin: " + "localhost");
@@ -161,8 +156,8 @@ public class JavaHTTPServer implements Runnable {
         try {
             Thread.sleep(fileLength / 100);
         } catch (InterruptedException e) {
-
+            logger.error("Time is corrupted. World end...", e);
         }
-        logger.log(Level.INFO, "Creating header of response with code " + code.getCode());
+        logger.info("Creating header of response with code {}", code.getCode());
     }
 }

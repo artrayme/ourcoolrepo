@@ -1,13 +1,12 @@
 package com.dream.team.ourcoolrepo.server;
 
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.time.LocalDate;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,46 +19,55 @@ public class Main {
         int port = DEFAULT_PORT;
         List<String> commands = Arrays.stream(args)
                 .filter(x -> x.startsWith("-") | x.startsWith("--")).toList();
-        if (!commands.isEmpty()){
-            Optional<String> helpCommandOptional = commands.stream()
-                    .filter(x -> x.startsWith("-h") || x.startsWith("--help"))
-                    .findFirst();
-            if (helpCommandOptional.isPresent()){
-                logger.log(Level.INFO, HELP);
+        if (!commands.isEmpty()) {
+
+            Optional<String> helpCommandOptional = extractFlag(commands, "-h", "--help");
+            if (helpCommandOptional.isPresent()) {
+                logger.info(HELP);
                 return;
             }
-            Optional<String> portCommandOptional = commands.stream()
-                    .filter(x -> x.startsWith("-p") || x.startsWith("--port"))
-                    .findFirst();
-            if (portCommandOptional.isPresent()){
+
+            Optional<String> portCommandOptional = extractFlag(commands, "-p", "--port");
+            if (portCommandOptional.isPresent()) {
                 String portCommand = portCommandOptional.get();
                 try {
-                    String portString = portCommand.substring(portCommand.indexOf("=")+1);
+                    String portString = portCommand.split("=")[1];
                     port = Integer.parseInt(portString);
-                    logger.log(Level.INFO, "ok, using port: " + port);
-                } catch (NumberFormatException | ArrayIndexOutOfBoundsException e){
-                    logger.log(Level.WARN, "argument is invalid, using default(8082) port;");
+                    logger.info("Port changed successfully. Using port: " + port);
+                } catch (NumberFormatException e) {
+                    logger.warn("Argument is invalid, using default({}) port;", DEFAULT_PORT);
                 }
             }
         }
 
+        ServerSocket serverConnect;
         try {
-            ServerSocket serverConnect = new ServerSocket(port);
-            logger.log(Level.INFO, "Server started. Listening for connections on port : " + port);
-
-            while (true) {
-                JavaHTTPServer myServer = new JavaHTTPServer(serverConnect.accept());
-
-                System.out.println("Connecton opened. (" + new Date() + ")");
-
-                Thread thread = new Thread(myServer);
-                thread.start();
-            }
-
+            serverConnect = new ServerSocket(port);
         } catch (IOException e) {
-            System.err.println("Server Connection error : " + e.getMessage());
+            logger.error("Server cannot be started", e);
+            return;
+        }
+        logger.info("Server started. Listening for connections on port :{}", port);
+
+        while (true) {
+            JavaHTTPServer myServer;
+            try {
+                myServer = new JavaHTTPServer(serverConnect.accept());
+            } catch (IOException e) {
+                logger.error("Socket cannot be open", e);
+                break;
+            }
+            logger.info("Connection opened. ({})", LocalDate.now());
+
+            Thread thread = new Thread(myServer);
+            thread.start();
         }
     }
 
+    private static Optional<String> extractFlag(List<String> commands, String shortFlag, String longFlag) {
+        return commands.stream()
+                .filter(x -> x.startsWith(shortFlag) || x.startsWith(longFlag))
+                .findFirst();
+    }
 
 }
