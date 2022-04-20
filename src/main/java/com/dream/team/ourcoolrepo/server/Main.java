@@ -16,6 +16,7 @@ public class Main {
     private static final int DEFAULT_PORT = 8082;
 
     public static void main(String... args) {
+        logger.info("Args:{}", (Object[]) args);
         int port = DEFAULT_PORT;
         List<String> commands = Arrays.stream(args)
                 .filter(x -> x.startsWith("-") | x.startsWith("--")).toList();
